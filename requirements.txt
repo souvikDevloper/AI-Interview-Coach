@@ -1,0 +1,13 @@
+langchain
+PyPDF2
+openai
+# wave              ← REMOVE (stdlib already provides wave)
+streamlit==1.38.0   # ≥1.36 satisfies both plugins
+tiktoken
+nltk
+audio_recorder_streamlit
+streamlit-option-menu
+streamlit-lottie
+faiss-cpu
+boto3
+ipython             # exact case doesn’t matter; 9.x needs Python 3.11
