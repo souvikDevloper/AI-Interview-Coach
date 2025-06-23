@@ -1,134 +1,112 @@
 <h1 align="center">
-  GPT Interviewer 🎙️
-  <br>
-  <sup><sub>Streamlit · LangChain · Fireworks · Edge-TTS · Whisper</sub></sup>
+  GPT&nbsp;Interviewer 🎙️
 </h1>
-
 <p align="center">
-  <em>Your personal, on-device AI interviewer for résumé, JD &amp; behavioural practice.</em>
+  <i>“Practice like it’s the real thing.”</i><br>
+  AI-powered mock-interviews for tech candidates – voice in, voice out, feedback in seconds.
 </p>
 
 <p align="center">
-  <img alt="GitHub Workflow Status" src="https://img.shields.io/github/actions/workflow/status/YourUser/GPTInterviewer/ci.yml?branch=main">
-  <img alt="License" src="https://img.shields.io/github/license/YourUser/GPTInterviewer">
+  <img alt="Streamlit" src="https://img.shields.io/badge/Frontend-Streamlit-ff4c2e?logo=streamlit&logoColor=white">
+  <img alt="LangChain" src="https://img.shields.io/badge/Framework-LangChain-000?logo=data&logoColor=white">
+  <img alt="Fireworks" src="https://img.shields.io/badge/LLM-Fireworks_AI-ffcc00">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.11-blue?logo=python">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-green">
 </p>
 
 ---
 
-## Table of Contents
-1. [Demo](#demo)
-2. [Key Features](#key-features)
-3. [Architecture](#architecture)
-4. [Quick Start](#quick-start)
-5. [Configuration](#configuration)
-6. [Troubleshooting](#troubleshooting)
-7. [Roadmap](#roadmap)
-8. [Contributing](#contributing)
-9. [License](#license)
+## ✨ Highlights
+
+| 🚀 Feature | 💡 What you get |
+|-----------|----------------|
+| **JD Screen** | Paste a job-description → app auto-builds a guideline & asks *one* targeted tech question per topic. |
+| **Behavioural Screen** | STAR-style soft-skill questions, intelligent follow-ups, instant rubric feedback. |
+| **Résumé Screen** | Parses your PDF, spots skills & gaps, grills you accordingly. |
+| **Voice I/O** | Local Whisper STT + Microsoft Edge-TTS = natural conversation. |
+| **Downloadable Report** | Score + strengths + improvement tips in a single click. |
 
 ---
 
-## Demo
-> *Short GIF / YouTube link goes here.*  
-> The app walks you through three professional interview modes—**Job-Description**, **Behavioural** and **Résumé**—with real-time speech and feedback.
+## 🗄️ Project Structure (core parts)
+
+GPTInterviewer/
+│
+├─ pages/ # Streamlit multi-page UI
+│ ├── Homepage.py
+│ ├── Professional Screen.py
+│ ├── Behavioural Screen.py
+│ └── Resume Screen.py
+│
+├─ speech_recognition/ # Whisper (CPU-only) helper
+├─ tts/ # Edge-TTS wrapper
+├─ prompts/ # Prompt templates + selector
+├─ requirements.txt
+└─ .env.example # add your Fireworks key here
+
+
+
+### Under the hood 🔧
+1. **Retriever** – Fireworks embeddings ➜ FAISS similarity search  
+2. **Guideline builder** – `RetrievalQA` (LangChain) + `llama-v3p1-8b-instruct`  
+3. **Conversation** – `ConversationChain` keeps context & memory  
+4. **Audio** (opt-in) – Whisper (STT) and Edge-TTS (synth)  
+5. **Feedback** – second LLM pass with a scoring prompt
+
+Everything except audio runs in the free Fireworks cloud; Whisper/Edge-TTS stay local (CPU-only by default).
 
 ---
 
-## Key Features
-| Mode | What it does | LLM ↔ Embedding |
-|------|--------------|-----------------|
-| **JD Screen** | Transforms any job-desc/keyword set into a topic guideline and grills you on technical depth. | `llama-v3p1-8b-instruct` ↔ `nomic-embed-text` |
-| **Behavioural Screen** | Generates soft-skill questions, follows up on STAR answers, and critiques clarity & impact. | Same |
-| **Résumé Screen** | Parses your PDF résumé, pinpoints achievements/skills, and asks position-specific questions. | Same |
-
-*Edge-TTS voice*, *Whisper STT* and *instant feedback scoring* are available in every mode.
-
----
-
-## Architecture
-
-```mermaid
-graph TD
-  %% ────────── UI ─────────────
-  subgraph Frontend (Streamlit)
-    JD[Job Description textarea]
-    MIC[Audio Recorder]
-    CHAT[Chat Input / History]
-  end
-
-  %% ───── LangChain core ──────
-  subgraph Backend (LangChain + Fireworks)
-    RETR[FAISS + FireworksEmbeddings]
-    GL[Guideline RetrievalQA]
-    CONVO[ConversationChain (LLM)]
-    STT[Whisper (STT)]
-    TTS[Edge-TTS (TTS)]
-  end
-
-  %% ────────── flow ───────────
-  JD  --> RETR
-  RETR --> GL
-  CHAT --> CONVO
-  MIC  --> STT --> CONVO
-  GL   --> CONVO
-  CONVO --> TTS
-  CONVO --> CHAT
-Everything after the arrow heads is fully serverless—Fireworks handles the LLM & embedding calls, while Whisper & TTS run locally (CPU-only by default).
-
-LangChain orchestration keeps prompt templates, vector search and memory consistent across screens.
-
-Quick Start
+## ⚡ Quick Start
 
 
-# 1. Clone & enter the repo
-git clone https://github.com/YourUser/GPTInterviewer.git
+git clone https://github.com/souvikDevloper/GPTInterviewer.git
 cd GPTInterviewer
 
-# 2. Create a lightweight virtual-env
-python -m venv .venv && .\.venv\Scripts\activate      # Windows
-# source .venv/bin/activate                           # mac/Linux
+python -m venv .venv && ^        # Win
+.\.venv\Scripts\activate         # Win
+# source .venv/bin/activate      # mac/Linux
 
-# 3. Install runtime deps (no CUDA required)
 pip install -r requirements.txt
 
-# 4. Add your Fireworks key
-cp .env.example .env
-# edit .env and paste FIREWORKS_API_KEY=fw_****
+# --- configure -------------------------------------------------
+copy .env.example .env           # Win
+# cp .env.example .env           # mac/Linux
+# open .env and paste FIREWORKS_API_KEY=fw_xxxxxxxxx
 
-# 5. Run!
+# (optional) keep Whisper on CPU – safe on any box
+set CT2_FORCE_CPU=1              # Win
+# export CT2_FORCE_CPU=1         # mac/Linux
+# ----------------------------------------------------------------
+
 streamlit run Homepage.py
-Windows & Whisper note
-We force CPU inference with CT2_FORCE_CPU=1 and install faster-whisper 1.0.2 + onnxruntime 1.22 to avoid missing cuDNN DLLs.
+Tip: No GPU? You’re fine – the repo pins faster-whisper==1.0.2 + onnxruntime==1.22.0 (CPU wheels).
 
-Configuration
-Variable	Default	Description
-FIREWORKS_API_KEY	–	Required. Grab a free key at https://fireworks.ai.
-FIREWORKS_MODEL	accounts/fireworks/models/llama-v3p1-8b-instruct	Main chat model. Swap with any you see in GET /models.
-EMBED_MODEL	nomic-embed-text	Text-embedding model for FAISS.
-CT2_FORCE_CPU	1	Keep Whisper on CPU; set 0 if you have GPU + cuDNN.
+🔧 Key Settings
+Env var	Default	Notes
+FIREWORKS_API_KEY	–	Required – create one at https://fireworks.ai.
+FIREWORKS_MODEL	accounts/fireworks/models/llama-v3p1-8b-instruct	Swap to any public model you prefer.
+EMBED_MODEL	nomic-embed-text	Remote embedding model for retriever.
+CT2_FORCE_CPU	1	Whisper CPU fallback. Set to 0 if you have CUDA + cuDNN 9.
 
-Troubleshooting
-Symptom	Fix
-“ValueError: int8_float16 compute type not supported”	CT2_FORCE_CPU=1 or install a GPU build of cuDNN 9.
-Large repo (>700 MB)	Run git filter-repo --invert-paths --path .venv --path models --path '*.bin' then force-push.
-Mermaid diagram won’t render	Ensure every node label is inside exactly one pair of brackets and edges are on separate lines.
+🩹 Common Pitfalls
+Problem	Fix
+cudnn_ops64_9.dll missing / int8_float16 error	Keep Whisper on CPU → set CT2_FORCE_CPU=1, reinstall faster-whisper==1.0.2.
+Fireworks 404 / “model not found”	Use the full model slug from GET /models, e.g. accounts/fireworks/models/llama-v3p1-8b-instruct.
+Repo > 100 MB	You pushed .venv/ or models/**. Delete local venv, commit .gitignore, then run:
+git filter-repo --invert-paths --path .venv --path models --path '*.bin'
 
-Roadmap
- Multi-user session storage (Redis)
+🚀 Roadmap
+Redis session storage (multi-user)
 
- GitHub Action for auto-build & Streamlit Community Cloud deploy
+CI workflow → Streamlit Community deploy
 
- Additional Fireworks vision model for résumé screenshot analysis
+Vision LLM: résumé screenshot critique
 
- Custom LLM evaluation rubric for richer feedback
+Customisable scoring weights
 
-Contributing
-Fork and create a feature branch.
+© License & Credits
+MIT License – 2025 Souvik Ghosh (solo author).
+Built with Streamlit, LangChain, Fireworks AI, Whisper, Edge-TTS & FAISS.
 
-pre-commit install to run Black, Ruff & isort.
-
-Submit a PR—all contributors must sign off the DCO (Developer Certificate of Origin).
-
-License
-Licensed under the MIT License.
-© 2025 Souvik Ghosh. All rights reserved.
+Pull-requests are welcome (feature branches only) – but final merges remain at the discretion of the repository owner.
