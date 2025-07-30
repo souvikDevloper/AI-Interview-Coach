@@ -20,7 +20,7 @@ from streamlit_lottie import st_lottie
 from audio_recorder_streamlit import audio_recorder
 from PyPDF2 import PdfReader
 
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from langchain_fireworks import ChatFireworks, FireworksEmbeddings
 from langchain.chains import ConversationChain, RetrievalQA
 from langchain.prompts import PromptTemplate
@@ -76,9 +76,12 @@ def init_state():
         st.session_state.chain_kwargs = prompt_sector(position, templates)
 
     if "memory" not in st.session_state:
-        st.session_state.memory = ConversationBufferMemory(
-            human_prefix="Candidate", ai_prefix="Interviewer")
-
+        st.session_state.memory = ConversationBufferWindowMemory(
+             k=6,
+             human_prefix="Candidate",
+             ai_prefix="Interviewer",
+             return_messages=True       # required by ConversationChain ≥0.2.7
+        )
     if "history" not in st.session_state:
         st.session_state.history = [
             Message("ai", "Hello! I’ll ask questions based on your resume. Please introduce yourself.")

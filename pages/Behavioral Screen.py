@@ -19,7 +19,7 @@ import streamlit as st
 from streamlit_lottie import st_lottie
 from audio_recorder_streamlit import audio_recorder
 
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from langchain_fireworks import ChatFireworks, FireworksEmbeddings
 from langchain.chains import ConversationChain, RetrievalQA
 from langchain.prompts import PromptTemplate
@@ -77,8 +77,12 @@ def init_state():
         }
 
     if "memory" not in st.session_state:
-        st.session_state.memory = ConversationBufferMemory()
-
+        st.session_state.memory = ConversationBufferWindowMemory(
+             k=6,
+             human_prefix="Candidate",
+             ai_prefix="Interviewer",
+             return_messages=True       # required by ConversationChain ≥0.2.7
+        )
     if "history" not in st.session_state:
         st.session_state.history = [
             Message("ai", "Hi! I'm your behavioural interviewer. Please introduce yourself.")
