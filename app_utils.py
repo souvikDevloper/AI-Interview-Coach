@@ -1,66 +1,56 @@
-# app_utils.py ────────────────────────────────────────────────────────────
 """
-Utility helpers for the Streamlit AI‑Interviewer project
-─────────────────────────────────────────────────────────
-• ensure_punkt() → make sure the NLTK sentence‑tokenizer data is available  
-• switch_page()  → programmatically jump between multipage Streamlit files
+app_utils.py – tiny helpers for the AI-Interviewer app
+• ensure_punkt()  → guarantee NLTK’s Punkt tokenizer is available
+• switch_page()   → wrapper around Streamlit’s public st.switch_page()
 """
-
 from __future__ import annotations
 
 import contextlib
 import nltk
+import streamlit as st
 
-
-# ────────────────────────── NLTK setup ────────────────────────────────
+# ────────────────────── NLTK bootstrap ────────────────────────
 def ensure_punkt() -> None:
-    """Guarantee that NLTK’s ‘punkt’ resources are downloaded once."""
+    """Download Punkt resources once if missing."""
     for pkg in ("punkt", "punkt_tab"):
         with contextlib.suppress(LookupError):
-            nltk.data.find(f"tokenizers/{pkg}")  # already present → exit early
+            nltk.data.find(f"tokenizers/{pkg}")
             continue
         nltk.download(pkg, quiet=True)
 
-
-# run at import so every Streamlit page has the tokenizer
+# Run on import so all pages are safe
 ensure_punkt()
-# ───────────────────────────────────────────────────────────────────────
 
-
-# ────────────────── Streamlit multipage helper ────────────────────────
-def switch_page(page_name: str) -> None:
+# ───────────────────── page switch wrapper ─────────────────────
+def switch_page(page_name_or_path: str) -> None:
     """
-    Hard‑rerun the app so that it lands on another multipage screen.
-
-    Example
-    -------
-    ```python
-    if st.button("Professional interview"):
-        switch_page("Professional Screen")
-    ```
+    Prefer Streamlit’s public API. You can pass either:
+      • a path like 'pages/Professional Screen.py'
+      • (not recommended anymore) a page title
     """
-    from streamlit.runtime.scriptrunner import RerunData, RerunException
+    # If it looks like a file path in /pages, call the public API directly.
+    if ("/" in page_name_or_path) or (page_name_or_path.lower().endswith(".py")):
+        if hasattr(st, "switch_page"):
+            st.switch_page(page_name_or_path)
+        else:
+            st.warning("Your Streamlit build doesn’t expose `st.switch_page`. Click below:")
+            st.page_link(page_name_or_path, label=f"➡️ {page_name_or_path}")
+            st.stop()
+        return
 
-    # 🔧  Streamlit ≥ 1.31 moved `get_pages`
-    try:  #  new location first
-        from streamlit.runtime.scriptrunner.script_runner import get_pages
-    except ImportError:  #  fallback for Streamlit ≤ 1.30
-        from streamlit.source_util import get_pages  # type: ignore
+    # Legacy title-based usage: map common titles to the file path.
+    title_map = {
+        "professional screen": "pages/Professional Screen.py",
+        "resume screen":       "pages/Resume Screen.py",
+        "behavioral screen":   "pages/Behavioral Screen.py",
+        "homepage":            "Homepage.py",
+    }
+    key = page_name_or_path.strip().lower()
+    if key in title_map:
+        return switch_page(title_map[key])
 
-    def normalise(name: str) -> str:
-        """Lower‑case & strip underscores so titles are matched loosely."""
-        return name.strip().lower().replace("_", " ")
-
-    # collect the registered pages for the *current* app
-    pages = get_pages("")  # empty path = current script folder
-    wanted = normalise(page_name)
-
-    for page_hash, cfg in pages.items():
-        if normalise(cfg["page_name"]) == wanted:
-            # trigger the rerun to the target page
-            raise RerunException(RerunData(page_script_hash=page_hash))
-
-    # nothing matched → show helpful error
-    available = ", ".join(sorted(normalise(p["page_name"]) for p in pages.values()))
-    raise ValueError(f"❌ No page titled “{page_name}”. Available: {available}")
-# ───────────────────────────────────────────────────────────────────────
+    raise ValueError(
+        f"Unknown page '{page_name_or_path}'. "
+        "Pass a path under /pages or one of: "
+        f"{', '.join(sorted(title_map))}"
+    )
