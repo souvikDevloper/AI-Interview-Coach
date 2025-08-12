@@ -45,29 +45,31 @@ flowchart TD
   %% Input path
   B --> C{Voice enabled?}
   C -- Yes --> D[AudioRecorder]
-  D --> E[Whisper<br/>(faster-whisper)]
+  D --> E["Whisper\n(faster-whisper)"]
   C -- No --> F[Typed input]
   E --> F
 
   %% Retrieval & memory
-  F --> G[LangChain Memory<br/>(ConversationBuffer)]
-  F --> H[Retriever<br/>FAISS + FireworksEmbeddings]
-  H --> I[Top-k Context]
+  F --> G[LangChain Memory]
+  F --> H["Retriever:\nFAISS + FireworksEmbeddings"]
+  H --> I[Top-k context]
 
-  %% LLM round
-  G --> J[ConversationChain Prompt]
+  %% Conversation
+  G --> J[Conversation Chain Prompt]
   I --> J
-  J --> K[ChatFireworks LLM<br/>llama-v3p1-8b-instruct]
+  J --> K["ChatFireworks LLM\nllama-v3p1-8b-instruct"]
   K --> L[Interviewer reply]
 
-  %% TTS (optional)
+  %% TTS
   L --> M{Auto-play voice?}
-  M -- Yes --> N[Edge-TTS] --> O[Audio Out]
+  M -- Yes --> N["Edge-TTS\n(audio out)"]
   M -- No --> B
 
-  %% Feedback path
-  B --> P{User clicks 'Get feedback'}
-  P -- Yes --> Q[Feedback Chain] --> R[Scored Report .txt]
+  %% Feedback
+  B --> O["Get feedback" button]
+  O --> P[Feedback Chain]
+  P --> Q["Scored report (.txt)"]
+
 ```
 <details><summary>ASCII fallback (if Mermaid is disabled)</summary>
 
