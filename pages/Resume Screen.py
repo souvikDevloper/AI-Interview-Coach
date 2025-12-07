@@ -30,6 +30,7 @@ from prompts.prompts import templates
 from prompts.prompt_selector import prompt_sector
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
+from app_utils import require_fireworks_api_key
 
 # ── constants ──────────────────────────────────────────────
 FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p1-8b-instruct"
@@ -158,6 +159,9 @@ resume_pdf= st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if position and resume_pdf:
+    if not require_fireworks_api_key():
+        st.stop()
+
     init_state(position, resume_pdf)
 
     c1, c2, c3 = st.columns(3)

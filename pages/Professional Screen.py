@@ -28,6 +28,7 @@ import nltk
 from prompts.prompts import templates
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
+from app_utils import require_fireworks_api_key
 
 # ── constants ──────────────────────────────────────────────
 FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p1-8b-instruct"
@@ -173,6 +174,9 @@ jd = st.text_area("Job description / keywords (e.g., *PostgreSQL*, *Python*):")
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if jd:
+    if not require_fireworks_api_key():
+        st.stop()
+
     init_state(jd)
 
     c1, c2, c3 = st.columns(3)
