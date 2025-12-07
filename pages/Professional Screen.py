@@ -18,6 +18,8 @@ import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
@@ -27,6 +29,11 @@ import nltk
 from prompts.prompts import templates
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
+from app_utils import require_ollama
+
+# ── constants ──────────────────────────────────────────────
+LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 from app_utils import build_chat_model, build_embeddings
 
 # ── constants ──────────────────────────────────────────────
@@ -40,6 +47,11 @@ class Message:
 # ── helpers ────────────────────────────────────────────────
 def build_retriever(text: str):
     nltk.download("punkt", quiet=True)
+    chunks = NLTKTextSplitter().split_text(text or "")
+    store  = FAISS.from_texts(
+        chunks,
+        HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    )
     chunks = NLTKTextSplitter().split_text(text or "")
     store  = FAISS.from_texts(chunks, build_embeddings())
     return store.as_retriever(search_type="similarity")
@@ -105,6 +117,10 @@ def init_state(jd: str):
         ]
 
     if "guideline" not in st.session_state:
+        llm = ChatOllama(model=LLM_MODEL, temperature=0.3, num_predict=800)
+        st.session_state.guideline = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
         llm = build_chat_model(temperature=0.3, context_window=800)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
@@ -128,6 +144,12 @@ def init_state(jd: str):
         st.session_state.q_idx = 0
     if "max_q" not in st.session_state:
         st.session_state.max_q = MAX_QUESTIONS
+    if "finished" not in st.session_state:
+        st.session_state.finished = False
+
+    # feedback chain (kept for one-click report)
+    if "feedback_llm" not in st.session_state:
+        st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
     if "finished" not in st.session_state:
         st.session_state.finished = False
 
@@ -171,6 +193,9 @@ jd = st.text_area("Job description / keywords (e.g., *PostgreSQL*, *Python*):")
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if jd:
+    if not require_ollama():
+        st.stop()
+
     init_state(jd)
 
     c1, c2, c3 = st.columns(3)

@@ -1,3 +1,4 @@
+"""Resume Screen – local, open-source models via Ollama"""
 """Resume Screen – Open LLM + HF embeddings"""
 
 # ── one-off flags ───────────────────────────────────────────
@@ -19,6 +20,8 @@ from audio_recorder_streamlit import audio_recorder
 from PyPDF2 import PdfReader
 
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
@@ -29,6 +32,11 @@ from prompts.prompts import templates
 from prompts.prompt_selector import prompt_sector
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
+from app_utils import require_ollama
+
+# ── constants ──────────────────────────────────────────────
+LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 from app_utils import build_chat_model, build_embeddings
 
 # ── constants ──────────────────────────────────────────────
@@ -42,6 +50,11 @@ class Message:
 def build_retriever(pdf_file):
     nltk.download("punkt", quiet=True)
     text = "".join(p.extract_text() or "" for p in PdfReader(pdf_file).pages)
+    chunks = NLTKTextSplitter().split_text(text)
+    store  = FAISS.from_texts(
+        chunks,
+        HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    )
     chunks = NLTKTextSplitter().split_text(text)
     store  = FAISS.from_texts(chunks, build_embeddings())
     return store.as_retriever(search_type="similarity")
