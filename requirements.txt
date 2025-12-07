@@ -1,6 +1,7 @@
 langchain
 langchain-community
-langchain-fireworks
+huggingface-hub
+sentence-transformers
 PyPDF2
 python-dotenv
 openai

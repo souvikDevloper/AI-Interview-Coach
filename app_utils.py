@@ -1,7 +1,8 @@
 """
 app_utils.py – tiny helpers for the AI-Interviewer app
-• ensure_punkt()  → guarantee NLTK’s Punkt tokenizer is available
-• switch_page()   → wrapper around Streamlit’s public st.switch_page()
+• ensure_punkt()          → guarantee NLTK’s Punkt tokenizer is available
+• require_hf_api_token()  → nudge user to set a Hugging Face token
+• switch_page()           → wrapper around Streamlit’s public st.switch_page()
 """
 from __future__ import annotations
 
@@ -22,15 +23,15 @@ def ensure_punkt() -> None:
 # Run on import so all pages are safe
 ensure_punkt()
 
-# ───────────────────── FIREWORKS API key guard ───────────────
-def require_fireworks_api_key() -> bool:
-    """Show a helpful error and halt if the Fireworks key is missing."""
-    if os.getenv("FIREWORKS_API_KEY"):
+# ───────────────────── Hugging Face token guard ──────────────
+def require_hf_api_token() -> bool:
+    """Show a helpful error and halt if the Hugging Face token is missing."""
+    if os.getenv("HUGGINGFACEHUB_API_TOKEN"):
         return True
 
     st.error(
-        "Set the `FIREWORKS_API_KEY` environment variable (see .env.example) "
-        "before starting the app."
+        "Set the `HUGGINGFACEHUB_API_TOKEN` environment variable (see .env.example) "
+        "before starting the app. You can generate a free token at https://huggingface.co/settings/tokens."
     )
     return False
 

@@ -1,4 +1,4 @@
-"""Professional Screen – Fireworks-only, fast & deterministic"""
+"""Professional Screen – powered by open-source HF models"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -7,6 +7,7 @@ os.environ["CT2_FORCE_CPU"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # ── stdlib / 3rd-party ─────────────────────────────────────
+import os
 import re
 from dataclasses import dataclass
 from typing import Literal, List
@@ -18,22 +19,23 @@ import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
 from langchain.memory import ConversationBufferWindowMemory
-from langchain_fireworks import ChatFireworks, FireworksEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.llms import HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
 
 import nltk
 from prompts.prompts import templates
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
-from app_utils import require_fireworks_api_key
+from app_utils import require_hf_api_token
 
 # ── constants ──────────────────────────────────────────────
-FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p1-8b-instruct"
-EMBED_MODEL     = "nomic-embed-text"
-MAX_QUESTIONS   = 12
+HF_LLM_MODEL   = os.getenv("HF_LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
+EMBED_MODEL    = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+MAX_QUESTIONS  = 12
 
 @dataclass
 class Message:
@@ -44,8 +46,18 @@ class Message:
 def build_retriever(text: str):
     nltk.download("punkt", quiet=True)
     chunks = NLTKTextSplitter().split_text(text or "")
-    store  = FAISS.from_texts(chunks, FireworksEmbeddings(model_name=EMBED_MODEL))
+    embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    store = FAISS.from_texts(chunks, embeddings)
     return store.as_retriever(search_type="similarity")
+
+
+def build_llm(max_new_tokens: int, temperature: float):
+    return HuggingFaceEndpoint(
+        repo_id=HF_LLM_MODEL,
+        temperature=temperature,
+        max_new_tokens=max_new_tokens,
+        huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
+    )
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
 def extract_questions(guideline: str, fallback: List[str]) -> List[str]:
@@ -108,7 +120,7 @@ def init_state(jd: str):
         ]
 
     if "guideline" not in st.session_state:
-        llm = ChatFireworks(model_name=FIREWORKS_MODEL, temperature=0.3, max_tokens=800)
+        llm = build_llm(max_new_tokens=800, temperature=0.3)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -136,7 +148,7 @@ def init_state(jd: str):
 
     # feedback chain (kept for one-click report)
     if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = ChatFireworks(model_name=FIREWORKS_MODEL, temperature=0.2, max_tokens=600)
+        st.session_state.feedback_llm = build_llm(max_new_tokens=600, temperature=0.2)
 
 # ── turn handler ───────────────────────────────────────────
 def handle_answer(blob, auto_play: bool):
@@ -174,7 +186,7 @@ jd = st.text_area("Job description / keywords (e.g., *PostgreSQL*, *Python*):")
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if jd:
-    if not require_fireworks_api_key():
+    if not require_hf_api_token():
         st.stop()
 
     init_state(jd)
@@ -187,7 +199,7 @@ if jd:
         if st.button("Get feedback"):
             tmpl = PromptTemplate(input_variables=["history", "input"], template=templates.feedback_template)
             prompt = tmpl.format(history=render_transcript(), input="Provide an evaluation of the interview.")
-            fb = st.session_state.feedback_llm.invoke(prompt).content
+            fb = st.session_state.feedback_llm.invoke(prompt)
             st.markdown(fb)
             st.download_button("Download feedback", fb, file_name="professional_feedback.txt")
     with c3:
