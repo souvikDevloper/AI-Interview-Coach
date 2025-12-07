@@ -1,7 +1,8 @@
 """
 app_utils.py – tiny helpers for the AI-Interviewer app
-• ensure_punkt()  → guarantee NLTK’s Punkt tokenizer is available
-• switch_page()   → wrapper around Streamlit’s public st.switch_page()
+• ensure_punkt()          → guarantee NLTK’s Punkt tokenizer is available
+• require_hf_api_token()  → nudge user to set a Hugging Face token
+• switch_page()           → wrapper around Streamlit’s public st.switch_page()
 """
 from __future__ import annotations
 

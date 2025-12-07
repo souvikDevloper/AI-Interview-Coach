@@ -178,7 +178,7 @@ if position and resume_pdf:
     with c2:
         if st.button("Get feedback"):
             tmpl = PromptTemplate(input_variables=["history","input"], template=templates.feedback_template)
-            fb   = st.session_state.feedback_llm.invoke(tmpl.format(history=render_transcript(), input="Evaluate the interview.")).content
+            fb   = st.session_state.feedback_llm.invoke(tmpl.format(history=render_transcript(), input="Evaluate the interview."))
             st.markdown(fb)
             st.download_button("Download feedback", fb, file_name="resume_feedback.txt")
     with c3:

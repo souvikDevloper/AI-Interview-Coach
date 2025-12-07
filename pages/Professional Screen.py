@@ -206,7 +206,7 @@ if jd:
         if st.button("Get feedback"):
             tmpl = PromptTemplate(input_variables=["history", "input"], template=templates.feedback_template)
             prompt = tmpl.format(history=render_transcript(), input="Provide an evaluation of the interview.")
-            fb = st.session_state.feedback_llm.invoke(prompt).content
+            fb = st.session_state.feedback_llm.invoke(prompt)
             st.markdown(fb)
             st.download_button("Download feedback", fb, file_name="professional_feedback.txt")
     with c3:
