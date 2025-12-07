@@ -1,10 +1,11 @@
 import os
 import streamlit as st
-from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.text_splitter import NLTKTextSplitter
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import RetrievalQA, ConversationChain
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.chat_models import ChatOllama
 from prompts.prompts import templates
 from langchain.prompts.prompt import PromptTemplate
 from PyPDF2 import PdfReader
@@ -27,7 +28,7 @@ If you keep the old cloud keys in place the original behaviour is unchanged.
 
 # ╭─ Back‑end selectors ─────────────────────────────────────────╮
 VOICE_BACKEND = os.getenv("VOICE_BACKEND", "edge").lower()
-LLM_BACKEND = os.getenv("LLM_BACKEND", "openai").lower()
+LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").lower()
 
 # ── Speech modules ──────────────────────────────────────────────
 if VOICE_BACKEND == "edge":
@@ -41,23 +42,31 @@ else:
     from tts.azure import speak
 
 # ── LLM selector ───────────────────────────────────────────────
-if LLM_BACKEND == "ollama":
-    from langchain_community.chat_models import ChatOllama as _ChatLLM
-    def _build_llm(temp: float):
-        return _ChatLLM(base_url="http://localhost:11434", model="llama3:8b-instruct-q4_0", temperature=temp)
-else:  # default to OpenAI so old behaviour continues if env var not set
-    from langchain.chat_models import ChatOpenAI as _ChatLLM
-    def _build_llm(temp: float):
-        return _ChatLLM(model_name="gpt-3.5-turbo", temperature=temp)
+def _build_llm(temp: float):
+    if LLM_BACKEND == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3")
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        return ChatOllama(base_url=base_url, model=model, temperature=temp)
+
+    # lightweight local fallback using transformers via langchain_community
+    from langchain_community.llms import HuggingFacePipeline
+    from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+
+    model_name = os.getenv("HF_MODEL", "sshleifer/tiny-gpt2")
+    tok = AutoTokenizer.from_pretrained(model_name)
+    mdl = AutoModelForCausalLM.from_pretrained(model_name)
+    text_gen = pipeline("text-generation", model=mdl, tokenizer=tok, max_new_tokens=256, do_sample=True, temperature=temp)
+    return HuggingFacePipeline(pipeline=text_gen)
 
 # ╰───────────────────────────────────────────────────────────────╯
 
 
 def embedding(text):
-    """Split text and embed using OpenAI embeddings then return a FAISS store."""
+    """Split text and embed using open embeddings then return a FAISS store."""
     text_splitter = NLTKTextSplitter()
     texts = text_splitter.split_text(text)
-    embeddings = OpenAIEmbeddings()
+    embed_model = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    embeddings = HuggingFaceEmbeddings(model_name=embed_model)
     return FAISS.from_texts(texts, embeddings)
 
 
