@@ -3,7 +3,7 @@ _AI‑powered mock interviews for tech roles — voice in, voice out, instant fe
 
 ![Stack](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Framework](https://img.shields.io/badge/Framework-LangChain-1C3C3C)
-![LLM](https://img.shields.io/badge/LLM-Fireworks%20AI-6C39F4)
+![LLM](https://img.shields.io/badge/LLM-Ollama%20(local)-0f172a)
 ![Search](https://img.shields.io/badge/Vector%20DB-FAISS-2E77BC)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -31,7 +31,7 @@ _AI‑powered mock interviews for tech roles — voice in, voice out, instant fe
   - **Behavioral** — STAR‑style soft‑skill questions with rubric‑based feedback.
   - **Résumé** — parse your PDF and drill into your actual experience.
 - **Voice I/O** — local Whisper STT + Edge‑TTS for natural conversation.
-- **Retrieval‑augmented** — Fireworks embeddings → FAISS similarity search.
+- **Retrieval‑augmented** — sentence-transformer embeddings → FAISS similarity search.
 - **One‑click report** — strengths, gaps, and an overall score you can download.
 
 ---
@@ -51,13 +51,13 @@ flowchart TD
 
   %% Retrieval & memory
   F --> G[LangChain Memory]
-  F --> H["Retriever:\nFAISS + FireworksEmbeddings"]
+  F --> H["Retriever:\nFAISS + HuggingFaceEmbeddings"]
   H --> I[Top-k context]
 
   %% Conversation
   G --> J[Conversation Chain Prompt]
   I --> J
-  J --> K["ChatFireworks LLM\nllama-v3p1-8b-instruct"]
+  J --> K["ChatOllama LLM\nllama3.1 (local)"]
   K --> L[Interviewer reply]
 
   %% TTS
@@ -75,8 +75,8 @@ flowchart TD
 
 ```
 User -> Streamlit UI -> (voice?) -> AudioRecorder -> Whisper -> text
-text -> Memory + Retriever(FAISS+Fireworks) -> Context
-Context + History -> Prompt -> Fireworks LLM -> Reply
+text -> Memory + Retriever(FAISS+HuggingFace) -> Context
+Context + History -> Prompt -> Local LLM (Ollama) -> Reply
 Reply -> (autoplay?) -> Edge-TTS -> Audio
 [Optional] "Get feedback" -> Feedback chain -> report.txt
 ```
@@ -87,12 +87,12 @@ Reply -> (autoplay?) -> Edge-TTS -> Audio
 ## Prerequisites
 
 - **Python**: 3.11.x recommended  
-- **Fireworks API key**: create one in your Fireworks account
+- **Ollama**: install and start the local daemon (https://ollama.com/download)
 - **Optional GPU for STT (Whisper)** — tested on HP Victus (RTX 3060)
   - NVIDIA driver (recent)
   - CUDA Toolkit **12.x or 13.x**
   - cuDNN **9.x** (ensure `cudnn_ops64_9.dll` is on `PATH`)
-  - _LLM calls run in Fireworks’ cloud; GPU is only for local Whisper._
+  - _LLM calls run locally via Ollama; GPU is only for local Whisper unless your Ollama model uses it._
 
 ---
 
@@ -113,11 +113,14 @@ python -m venv .venv
 # 3) Install deps
 pip install -r requirements.txt
 
-# 4) Configure your key
-copy .env.example .env   # Windows (or: cp .env.example .env)
-# then edit .env and set FIREWORKS_API_KEY=fw_...
+# 4) Pull an open-source chat model for Ollama
+ollama pull llama3.1   # or mistral, phi3, etc.
 
-# 5) Run
+# 5) (Optional) Configure .env overrides
+copy .env.example .env   # Windows (or: cp .env.example .env)
+# then edit .env and set OLLAMA_MODEL=<model-name> if you want something else
+
+# 6) Run
 streamlit run Homepage.py
 ```
 
@@ -138,10 +141,12 @@ python -c $code
 
 ## Environment config
 
-Create `.env` in repo root:
+Create `.env` in repo root (optional overrides):
 
 ```
-FIREWORKS_API_KEY=fw_XXXXXXXXXXXXXXXX
+# Ollama chat model name
+OLLAMA_MODEL=llama3.1
+
 # Optional STT settings (offline.py reads these)
 WHISPER_MODEL=small           # tiny/base/small/medium/large-v3
 WHISPER_DEVICE=cuda           # cuda or cpu
@@ -174,7 +179,7 @@ WHISPER_COMPUTE=float16       # float16 | float32 | int8_float16 | int8
 |---|---|
 | `cudnn_ops64_9.dll missing` | Ensure cuDNN `bin` is on PATH. Example (PowerShell): `setx PATH "$env:PATH;C:\Program Files\NVIDIA\CUDA\v13.0\bin;C:\Program Files\NVIDIA\CUDNN\v9.12\bin\13.0"` then open a **new** terminal. |
 | `Requested int8_float16 compute type...` | Your backend doesn’t support that mix. Set `WHISPER_COMPUTE=float16` (GPU) or `float32` (CPU). |
-| Fireworks `NOT_FOUND / 404` | Use the **full** model slug from `/models`, e.g. `accounts/fireworks/models/llama-v3p1-8b-instruct`. |
+| `Ollama service unavailable` | Start the daemon with `ollama serve` and pull a chat model, e.g. `ollama pull llama3.1`. |
 | `Prompt is too long` | Your JD/résumé is huge. Reduce chunk size/overlap or lower retriever `k`. |
 | `ModuleNotFoundError: streamlit_lottie` (or others) | `pip install -r requirements.txt` inside the **activated** `.venv`. |
 | Repeating questions | Conversation uses message history + asked‑topics memory. If you still see repeats, increase MAX_TURNS or clear session state. |

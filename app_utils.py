@@ -6,7 +6,6 @@ app_utils.py – tiny helpers for the AI-Interviewer app
 from __future__ import annotations
 
 import contextlib
-import os
 import nltk
 import streamlit as st
 
@@ -22,17 +21,24 @@ def ensure_punkt() -> None:
 # Run on import so all pages are safe
 ensure_punkt()
 
-# ───────────────────── FIREWORKS API key guard ───────────────
-def require_fireworks_api_key() -> bool:
-    """Show a helpful error and halt if the Fireworks key is missing."""
-    if os.getenv("FIREWORKS_API_KEY"):
-        return True
+# ───────────────────── local Ollama guard ─────────────────────
+def require_ollama() -> bool:
+    """Ping the local Ollama daemon and guide the user if it's offline."""
+    import http.client
 
-    st.error(
-        "Set the `FIREWORKS_API_KEY` environment variable (see .env.example) "
-        "before starting the app."
-    )
-    return False
+    try:
+        conn = http.client.HTTPConnection("localhost", 11434, timeout=2)
+        conn.request("GET", "/api/tags")
+        res = conn.getresponse()
+        return 200 <= res.status < 500
+    except Exception:
+        st.error(
+            "Start the **Ollama** daemon before launching the app.\n\n"
+            "- Install from https://ollama.com/download\n"
+            "- Run `ollama serve` in a terminal\n"
+            "- Pull a chat model, e.g. `ollama pull llama3.1`"
+        )
+        return False
 
 # ───────────────────── page switch wrapper ─────────────────────
 def switch_page(page_name_or_path: str) -> None:

@@ -1,4 +1,4 @@
-"""Resume Screen – Fireworks-only, fast & deterministic"""
+"""Resume Screen – local, open-source models via Ollama"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -19,7 +19,8 @@ from audio_recorder_streamlit import audio_recorder
 from PyPDF2 import PdfReader
 
 from langchain.memory import ConversationBufferWindowMemory
-from langchain_fireworks import ChatFireworks, FireworksEmbeddings
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
@@ -30,11 +31,11 @@ from prompts.prompts import templates
 from prompts.prompt_selector import prompt_sector
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
-from app_utils import require_fireworks_api_key
+from app_utils import require_ollama
 
 # ── constants ──────────────────────────────────────────────
-FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p1-8b-instruct"
-EMBED_MODEL     = "nomic-embed-text"
+LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 MAX_QUESTIONS   = 12
 
 @dataclass
@@ -46,7 +47,10 @@ def build_retriever(pdf_file):
     nltk.download("punkt", quiet=True)
     text = "".join(p.extract_text() or "" for p in PdfReader(pdf_file).pages)
     chunks = NLTKTextSplitter().split_text(text)
-    store  = FAISS.from_texts(chunks, FireworksEmbeddings(model_name=EMBED_MODEL))
+    store  = FAISS.from_texts(
+        chunks,
+        HuggingFaceEmbeddings(model_name=EMBED_MODEL)
+    )
     return store.as_retriever(search_type="similarity")
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
@@ -100,7 +104,7 @@ def init_state(position: str, pdf):
         st.session_state.history = [Message("ai", "Hello! Let’s discuss your resume. Give a brief intro.")]
 
     if "guideline" not in st.session_state:
-        llm = ChatFireworks(model_name=FIREWORKS_MODEL, temperature=0.3, max_tokens=800)
+        llm = ChatOllama(model=LLM_MODEL, temperature=0.3, num_predict=800)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -124,7 +128,7 @@ def init_state(position: str, pdf):
     if "finished" not in st.session_state:st.session_state.finished = False
 
     if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = ChatFireworks(model_name=FIREWORKS_MODEL, temperature=0.2, max_tokens=600)
+        st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
 
 def handle_answer(blob, auto_play: bool):
     if st.session_state.finished:
@@ -159,7 +163,7 @@ resume_pdf= st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if position and resume_pdf:
-    if not require_fireworks_api_key():
+    if not require_ollama():
         st.stop()
 
     init_state(position, resume_pdf)
