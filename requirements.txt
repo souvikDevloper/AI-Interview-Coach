@@ -1,17 +1,15 @@
 langchain
 langchain-community
-huggingface-hub
 sentence-transformers
+transformers
 PyPDF2
 python-dotenv
-openai
 faster-whisper
 numpy
 soundfile
 edge-tts
 # wave              ← REMOVE (stdlib already provides wave)
 streamlit==1.38.0   # ≥1.36 satisfies both plugins
-tiktoken
 nltk
 audio_recorder_streamlit
 streamlit-option-menu

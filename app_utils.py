@@ -7,9 +7,12 @@ app_utils.py – tiny helpers for the AI-Interviewer app
 from __future__ import annotations
 
 import contextlib
-import os
 import nltk
 import streamlit as st
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.llms import HuggingFacePipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 # ────────────────────── NLTK bootstrap ────────────────────────
 def ensure_punkt() -> None:
@@ -23,17 +26,44 @@ def ensure_punkt() -> None:
 # Run on import so all pages are safe
 ensure_punkt()
 
-# ───────────────────── Hugging Face token guard ──────────────
-def require_hf_api_token() -> bool:
-    """Show a helpful error and halt if the Hugging Face token is missing."""
-    if os.getenv("HUGGINGFACEHUB_API_TOKEN"):
-        return True
+# ───────────────────── Model builders ─────────────────────────
+def build_embeddings():
+    """Return a HuggingFace embedding model configured via env vars."""
+    model = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    return HuggingFaceEmbeddings(model_name=model)
 
-    st.error(
-        "Set the `HUGGINGFACEHUB_API_TOKEN` environment variable (see .env.example) "
-        "before starting the app. You can generate a free token at https://huggingface.co/settings/tokens."
+
+def build_chat_model(temperature: float, *, context_window: int | None = None):
+    """Create an open-source chat model.
+
+    Prefers an Ollama endpoint if available, otherwise falls back to a local
+    transformers pipeline. Configure via env vars:
+        LLM_BACKEND   (ollama | hf)
+        OLLAMA_MODEL  (defaults to "llama3")
+        OLLAMA_BASE_URL
+        HF_MODEL      (defaults to "sshleifer/tiny-gpt2" for CPU-only)
+    """
+
+    backend = os.getenv("LLM_BACKEND", "ollama").lower()
+    if backend == "ollama":
+        return ChatOllama(
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=os.getenv("OLLAMA_MODEL", "llama3"),
+            temperature=temperature,
+        )
+
+    model_name = os.getenv("HF_MODEL", "sshleifer/tiny-gpt2")
+    tok = AutoTokenizer.from_pretrained(model_name)
+    mdl = AutoModelForCausalLM.from_pretrained(model_name)
+    gen = pipeline(
+        "text-generation",
+        model=mdl,
+        tokenizer=tok,
+        max_new_tokens=context_window or 256,
+        do_sample=True,
+        temperature=temperature,
     )
-    return False
+    return HuggingFacePipeline(pipeline=gen)
 
 # ───────────────────── page switch wrapper ─────────────────────
 def switch_page(page_name_or_path: str) -> None:

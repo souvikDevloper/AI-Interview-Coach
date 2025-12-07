@@ -1,4 +1,4 @@
-"""Professional Screen – powered by open-source HF models"""
+"""Professional Screen – Open LLM + HF embeddings"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -7,7 +7,6 @@ os.environ["CT2_FORCE_CPU"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # ── stdlib / 3rd-party ─────────────────────────────────────
-import os
 import re
 from dataclasses import dataclass
 from typing import Literal, List
@@ -19,23 +18,26 @@ import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
 from langchain.memory import ConversationBufferWindowMemory
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import HuggingFaceEndpoint
 from langchain_community.vectorstores import FAISS
 
 import nltk
 from prompts.prompts import templates
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
-from app_utils import require_hf_api_token
+from app_utils import require_ollama
 
 # ── constants ──────────────────────────────────────────────
-HF_LLM_MODEL   = os.getenv("HF_LLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")
-EMBED_MODEL    = os.getenv("HF_EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-MAX_QUESTIONS  = 12
+LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+from app_utils import build_chat_model, build_embeddings
+
+# ── constants ──────────────────────────────────────────────
+MAX_QUESTIONS   = 12
 
 @dataclass
 class Message:
@@ -46,18 +48,13 @@ class Message:
 def build_retriever(text: str):
     nltk.download("punkt", quiet=True)
     chunks = NLTKTextSplitter().split_text(text or "")
-    embeddings = HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-    store = FAISS.from_texts(chunks, embeddings)
-    return store.as_retriever(search_type="similarity")
-
-
-def build_llm(max_new_tokens: int, temperature: float):
-    return HuggingFaceEndpoint(
-        repo_id=HF_LLM_MODEL,
-        temperature=temperature,
-        max_new_tokens=max_new_tokens,
-        huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
+    store  = FAISS.from_texts(
+        chunks,
+        HuggingFaceEmbeddings(model_name=EMBED_MODEL)
     )
+    chunks = NLTKTextSplitter().split_text(text or "")
+    store  = FAISS.from_texts(chunks, build_embeddings())
+    return store.as_retriever(search_type="similarity")
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
 def extract_questions(guideline: str, fallback: List[str]) -> List[str]:
@@ -120,7 +117,11 @@ def init_state(jd: str):
         ]
 
     if "guideline" not in st.session_state:
-        llm = build_llm(max_new_tokens=800, temperature=0.3)
+        llm = ChatOllama(model=LLM_MODEL, temperature=0.3, num_predict=800)
+        st.session_state.guideline = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+        llm = build_chat_model(temperature=0.3, context_window=800)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -148,7 +149,13 @@ def init_state(jd: str):
 
     # feedback chain (kept for one-click report)
     if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = build_llm(max_new_tokens=600, temperature=0.2)
+        st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
+    if "finished" not in st.session_state:
+        st.session_state.finished = False
+
+    # feedback chain (kept for one-click report)
+    if "feedback_llm" not in st.session_state:
+        st.session_state.feedback_llm = build_chat_model(temperature=0.2, context_window=600)
 
 # ── turn handler ───────────────────────────────────────────
 def handle_answer(blob, auto_play: bool):
@@ -186,7 +193,7 @@ jd = st.text_area("Job description / keywords (e.g., *PostgreSQL*, *Python*):")
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if jd:
-    if not require_hf_api_token():
+    if not require_ollama():
         st.stop()
 
     init_state(jd)
