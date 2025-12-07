@@ -1,4 +1,4 @@
-"""Behavioural Screen – local, open-source models via Ollama"""
+"""Behavioural Screen – Open LLM + HF embeddings"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -18,8 +18,6 @@ import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
 from langchain.memory import ConversationBufferWindowMemory
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import NLTKTextSplitter
@@ -29,11 +27,9 @@ import nltk
 from prompts.prompts import templates
 from speech_recognition.offline import save_wav_file, transcribe
 from tts.edge_speak import speak
-from app_utils import require_ollama
+from app_utils import build_chat_model, build_embeddings
 
 # ── constants ──────────────────────────────────────────────
-LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
-EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 MAX_QUESTIONS   = 10
 
 @dataclass
@@ -44,10 +40,7 @@ class Message:
 def build_retriever(text: str):
     nltk.download("punkt", quiet=True)
     chunks = NLTKTextSplitter().split_text(text or "")
-    store  = FAISS.from_texts(
-        chunks,
-        HuggingFaceEmbeddings(model_name=EMBED_MODEL)
-    )
+    store  = FAISS.from_texts(chunks, build_embeddings())
     return store.as_retriever(search_type="similarity")
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
@@ -106,7 +99,7 @@ def init_state(jd: str):
         st.session_state.history = [Message("ai", "Hi! Give a brief introduction about yourself.")]
 
     if "guideline" not in st.session_state:
-        llm = ChatOllama(model=LLM_MODEL, temperature=0.3, num_predict=700)
+        llm = build_chat_model(temperature=0.3, context_window=700)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -130,7 +123,7 @@ def init_state(jd: str):
     if "finished" not in st.session_state:st.session_state.finished = False
 
     if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
+        st.session_state.feedback_llm = build_chat_model(temperature=0.2, context_window=600)
 
 def handle_answer(blob, auto_play: bool):
     if st.session_state.finished:
@@ -164,9 +157,6 @@ jd = st.text_area("Behavioural prompt / keywords (optional):")
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if jd:
-    if not require_ollama():
-        st.stop()
-
     init_state(jd)
 
     c1, c2, c3 = st.columns(3)

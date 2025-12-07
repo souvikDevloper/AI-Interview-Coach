@@ -1,4 +1,4 @@
-"""Professional Screen – local, open-source models via Ollama"""
+"""Professional Screen – Open LLM + HF embeddings"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -34,6 +34,9 @@ from app_utils import require_ollama
 # ── constants ──────────────────────────────────────────────
 LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+from app_utils import build_chat_model, build_embeddings
+
+# ── constants ──────────────────────────────────────────────
 MAX_QUESTIONS   = 12
 
 @dataclass
@@ -49,6 +52,8 @@ def build_retriever(text: str):
         chunks,
         HuggingFaceEmbeddings(model_name=EMBED_MODEL)
     )
+    chunks = NLTKTextSplitter().split_text(text or "")
+    store  = FAISS.from_texts(chunks, build_embeddings())
     return store.as_retriever(search_type="similarity")
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
@@ -116,6 +121,10 @@ def init_state(jd: str):
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
+        llm = build_chat_model(temperature=0.3, context_window=800)
+        st.session_state.guideline = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
             chain_type_kwargs=st.session_state.chain_kwargs,
             retriever=st.session_state.retriever,
             memory=st.session_state.memory
@@ -141,6 +150,12 @@ def init_state(jd: str):
     # feedback chain (kept for one-click report)
     if "feedback_llm" not in st.session_state:
         st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
+    if "finished" not in st.session_state:
+        st.session_state.finished = False
+
+    # feedback chain (kept for one-click report)
+    if "feedback_llm" not in st.session_state:
+        st.session_state.feedback_llm = build_chat_model(temperature=0.2, context_window=600)
 
 # ── turn handler ───────────────────────────────────────────
 def handle_answer(blob, auto_play: bool):

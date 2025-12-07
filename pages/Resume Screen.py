@@ -1,4 +1,5 @@
 """Resume Screen – local, open-source models via Ollama"""
+"""Resume Screen – Open LLM + HF embeddings"""
 
 # ── one-off flags ───────────────────────────────────────────
 import os
@@ -36,6 +37,9 @@ from app_utils import require_ollama
 # ── constants ──────────────────────────────────────────────
 LLM_MODEL   = os.getenv("OLLAMA_MODEL", "llama3.1")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+from app_utils import build_chat_model, build_embeddings
+
+# ── constants ──────────────────────────────────────────────
 MAX_QUESTIONS   = 12
 
 @dataclass
@@ -51,6 +55,8 @@ def build_retriever(pdf_file):
         chunks,
         HuggingFaceEmbeddings(model_name=EMBED_MODEL)
     )
+    chunks = NLTKTextSplitter().split_text(text)
+    store  = FAISS.from_texts(chunks, build_embeddings())
     return store.as_retriever(search_type="similarity")
 
 _q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
@@ -104,7 +110,7 @@ def init_state(position: str, pdf):
         st.session_state.history = [Message("ai", "Hello! Let’s discuss your resume. Give a brief intro.")]
 
     if "guideline" not in st.session_state:
-        llm = ChatOllama(model=LLM_MODEL, temperature=0.3, num_predict=800)
+        llm = build_chat_model(temperature=0.3, context_window=800)
         st.session_state.guideline = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
@@ -128,7 +134,7 @@ def init_state(position: str, pdf):
     if "finished" not in st.session_state:st.session_state.finished = False
 
     if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = ChatOllama(model=LLM_MODEL, temperature=0.2, num_predict=600)
+        st.session_state.feedback_llm = build_chat_model(temperature=0.2, context_window=600)
 
 def handle_answer(blob, auto_play: bool):
     if st.session_state.finished:
@@ -163,9 +169,6 @@ resume_pdf= st.file_uploader("Upload your resume (PDF)", type=["pdf"])
 auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
 
 if position and resume_pdf:
-    if not require_ollama():
-        st.stop()
-
     init_state(position, resume_pdf)
 
     c1, c2, c3 = st.columns(3)

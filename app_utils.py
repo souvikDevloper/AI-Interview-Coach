@@ -8,6 +8,10 @@ from __future__ import annotations
 import contextlib
 import nltk
 import streamlit as st
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.llms import HuggingFacePipeline
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 
 # ────────────────────── NLTK bootstrap ────────────────────────
 def ensure_punkt() -> None:
@@ -21,24 +25,44 @@ def ensure_punkt() -> None:
 # Run on import so all pages are safe
 ensure_punkt()
 
-# ───────────────────── local Ollama guard ─────────────────────
-def require_ollama() -> bool:
-    """Ping the local Ollama daemon and guide the user if it's offline."""
-    import http.client
+# ───────────────────── Model builders ─────────────────────────
+def build_embeddings():
+    """Return a HuggingFace embedding model configured via env vars."""
+    model = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    return HuggingFaceEmbeddings(model_name=model)
 
-    try:
-        conn = http.client.HTTPConnection("localhost", 11434, timeout=2)
-        conn.request("GET", "/api/tags")
-        res = conn.getresponse()
-        return 200 <= res.status < 500
-    except Exception:
-        st.error(
-            "Start the **Ollama** daemon before launching the app.\n\n"
-            "- Install from https://ollama.com/download\n"
-            "- Run `ollama serve` in a terminal\n"
-            "- Pull a chat model, e.g. `ollama pull llama3.1`"
+
+def build_chat_model(temperature: float, *, context_window: int | None = None):
+    """Create an open-source chat model.
+
+    Prefers an Ollama endpoint if available, otherwise falls back to a local
+    transformers pipeline. Configure via env vars:
+        LLM_BACKEND   (ollama | hf)
+        OLLAMA_MODEL  (defaults to "llama3")
+        OLLAMA_BASE_URL
+        HF_MODEL      (defaults to "sshleifer/tiny-gpt2" for CPU-only)
+    """
+
+    backend = os.getenv("LLM_BACKEND", "ollama").lower()
+    if backend == "ollama":
+        return ChatOllama(
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=os.getenv("OLLAMA_MODEL", "llama3"),
+            temperature=temperature,
         )
-        return False
+
+    model_name = os.getenv("HF_MODEL", "sshleifer/tiny-gpt2")
+    tok = AutoTokenizer.from_pretrained(model_name)
+    mdl = AutoModelForCausalLM.from_pretrained(model_name)
+    gen = pipeline(
+        "text-generation",
+        model=mdl,
+        tokenizer=tok,
+        max_new_tokens=context_window or 256,
+        do_sample=True,
+        temperature=temperature,
+    )
+    return HuggingFacePipeline(pipeline=gen)
 
 # ───────────────────── page switch wrapper ─────────────────────
 def switch_page(page_name_or_path: str) -> None:
