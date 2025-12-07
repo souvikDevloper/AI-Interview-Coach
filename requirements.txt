@@ -1,4 +1,7 @@
 langchain
+langchain-community
+langchain-openai
+langchain-fireworks
 PyPDF2
 openai
 # wave              ← REMOVE (stdlib already provides wave)

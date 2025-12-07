@@ -18,12 +18,27 @@ import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 from PyPDF2 import PdfReader
 
-from langchain.memory import ConversationBufferWindowMemory
-from langchain_fireworks import ChatFireworks, FireworksEmbeddings
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.text_splitter import NLTKTextSplitter
-from langchain_community.vectorstores import FAISS
+try:
+    from langchain.memory import ConversationBufferWindowMemory
+    from langchain.chains import RetrievalQA
+    from langchain.prompts import PromptTemplate
+    from langchain.text_splitter import NLTKTextSplitter
+except ImportError:
+    ConversationBufferWindowMemory = None
+    RetrievalQA = None
+    PromptTemplate = None
+    NLTKTextSplitter = None
+
+try:
+    from langchain_fireworks import ChatFireworks, FireworksEmbeddings
+except ImportError:
+    ChatFireworks = None
+    FireworksEmbeddings = None
+
+try:
+    from langchain_community.vectorstores import FAISS
+except ImportError:
+    FAISS = None
 
 import nltk
 from prompts.prompts import templates
@@ -35,6 +50,23 @@ from tts.edge_speak import speak
 FIREWORKS_MODEL = "accounts/fireworks/models/llama-v3p1-8b-instruct"
 EMBED_MODEL     = "nomic-embed-text"
 MAX_QUESTIONS   = 12
+
+
+def _require_deps():
+    missing = []
+    if not (ConversationBufferWindowMemory and RetrievalQA and PromptTemplate and NLTKTextSplitter):
+        missing.append("langchain (full extras)")
+    if not (ChatFireworks and FireworksEmbeddings):
+        missing.append("langchain-fireworks")
+    if not FAISS:
+        missing.append("langchain-community")
+
+    if missing:
+        st.error(
+            "Missing dependencies: " + ", ".join(missing) +
+            ". Run `pip install -r requirements.txt` to install them."
+        )
+        st.stop()
 
 @dataclass
 class Message:
@@ -84,6 +116,8 @@ def render_transcript() -> str:
     return "\n".join(lines)
 
 def init_state(position: str, pdf):
+    _require_deps()
+
     if "retriever" not in st.session_state:
         st.session_state.retriever = build_retriever(pdf)
 

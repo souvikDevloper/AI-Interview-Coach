@@ -1,7 +1,16 @@
 import os
 import streamlit as st
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+
+try:  # Optional extras; show a friendly hint if they are missing
+    from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+except ImportError:  # pragma: no cover - purely defensive
+    OpenAIEmbeddings = None
+    ChatOpenAI = None
+
+try:
+    from langchain_community.vectorstores import FAISS
+except ImportError:  # pragma: no cover - purely defensive
+    FAISS = None
 from langchain.text_splitter import NLTKTextSplitter
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import RetrievalQA, ConversationChain
@@ -43,11 +52,22 @@ else:
 # ── LLM selector ───────────────────────────────────────────────
 if LLM_BACKEND == "ollama":
     from langchain_community.chat_models import ChatOllama as _ChatLLM
+
     def _build_llm(temp: float):
-        return _ChatLLM(base_url="http://localhost:11434", model="llama3:8b-instruct-q4_0", temperature=temp)
+        return _ChatLLM(
+            base_url="http://localhost:11434",
+            model="llama3:8b-instruct-q4_0",
+            temperature=temp,
+        )
 else:  # default to OpenAI so old behaviour continues if env var not set
-    from langchain.chat_models import ChatOpenAI as _ChatLLM
+    _ChatLLM = ChatOpenAI
+
     def _build_llm(temp: float):
+        if not _ChatLLM:
+            raise ImportError(
+                "langchain-openai is missing. Run `pip install -r requirements.txt` to enable ChatOpenAI."
+            )
+
         return _ChatLLM(model_name="gpt-3.5-turbo", temperature=temp)
 
 # ╰───────────────────────────────────────────────────────────────╯
@@ -55,6 +75,10 @@ else:  # default to OpenAI so old behaviour continues if env var not set
 
 def embedding(text):
     """Split text and embed using OpenAI embeddings then return a FAISS store."""
+    if not (OpenAIEmbeddings and FAISS):
+        raise ImportError(
+            "Missing langchain extras. Install requirements.txt (needs langchain-openai & langchain-community)."
+        )
     text_splitter = NLTKTextSplitter()
     texts = text_splitter.split_text(text)
     embeddings = OpenAIEmbeddings()
