@@ -6,6 +6,7 @@ app_utils.py – tiny helpers for the AI-Interviewer app
 from __future__ import annotations
 
 import contextlib
+import os
 import nltk
 import streamlit as st
 
@@ -20,6 +21,18 @@ def ensure_punkt() -> None:
 
 # Run on import so all pages are safe
 ensure_punkt()
+
+# ───────────────────── FIREWORKS API key guard ───────────────
+def require_fireworks_api_key() -> bool:
+    """Show a helpful error and halt if the Fireworks key is missing."""
+    if os.getenv("FIREWORKS_API_KEY"):
+        return True
+
+    st.error(
+        "Set the `FIREWORKS_API_KEY` environment variable (see .env.example) "
+        "before starting the app."
+    )
+    return False
 
 # ───────────────────── page switch wrapper ─────────────────────
 def switch_page(page_name_or_path: str) -> None:
