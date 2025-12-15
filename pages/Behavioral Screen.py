@@ -1,13 +1,14 @@
-"""Behavioural Screen – Open LLM + HF embeddings"""
+    
 
-# ── one-off flags ───────────────────────────────────────────
+    # ── one-off flags ───────────────────────────────────────────
 import os
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ["CT2_FORCE_CPU"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-# ── stdlib / 3rd-party ─────────────────────────────────────
 import re
+import hashlib
+import tempfile
 from dataclasses import dataclass
 from typing import Literal, List
 
@@ -17,175 +18,226 @@ load_dotenv()
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
-from langchain.memory import ConversationBufferWindowMemory
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from langchain.text_splitter import NLTKTextSplitter
+from langchain_groq import ChatGroq
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_core.prompts import PromptTemplate
 
-import nltk
+
+
 from prompts.prompts import templates
-from speech_recognition.offline import save_wav_file, transcribe
+from speech_recognition.offline import transcribe
 from tts.edge_speak import speak
-from app_utils import build_chat_model, build_embeddings
 
-# ── constants ──────────────────────────────────────────────
-MAX_QUESTIONS   = 10
+GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+EMBED_MODEL   = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+MAX_QUESTIONS = 10
+RETRIEVE_K    = int(os.getenv("RETRIEVE_K", "4"))
 
 @dataclass
 class Message:
     origin : Literal["human", "ai"]
     message: str
 
-def build_retriever(text: str):
-    nltk.download("punkt", quiet=True)
-    chunks = NLTKTextSplitter().split_text(text or "")
-    store  = FAISS.from_texts(chunks, build_embeddings())
-    return store.as_retriever(search_type="similarity")
+def _mk_llm(temperature: float, max_tokens: int):
+    try:
+        return ChatGroq(model=GROQ_MODEL, temperature=temperature, max_tokens=max_tokens)
+    except TypeError:
+        return ChatGroq(model_name=GROQ_MODEL, temperature=temperature, max_tokens=max_tokens)
 
-_q_line = re.compile(r"""^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$""")
-def extract_questions(guideline: str, fallback: List[str]) -> List[str]:
+def _invoke_chat(llm, prompt: str) -> str:
+    r = llm.invoke(prompt)
+    return getattr(r, "content", str(r))
+
+def _bytes_to_temp_wav(raw_bytes: bytes) -> str:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+        f.write(raw_bytes)
+        f.flush()
+        return f.name
+
+def _render_transcript(hist: List[Message]) -> str:
+    lines = []
+    for m in hist:
+        role = "Interviewer" if m.origin == "ai" else "Candidate"
+        lines.append(role + ": " + m.message)
+    return "\n".join(lines)
+
+_q_line = re.compile(r"^\s*(?:[-*•]|\d+[\).:])?\s*(.+?)\s*\??\s*$")
+
+def _extract_questions(guideline: str, fallback: List[str]) -> List[str]:
     qs: List[str] = []
     for raw in (guideline or "").splitlines():
         line = raw.strip()
         if not line:
             continue
-        if "?" in line or line.lower().startswith(("q:", "question", "ask")):
+        if "?" in line or line.lower().startswith(("q:", "question", "ask", "tell me", "describe")):
             m = _q_line.match(line)
-            if m:
-                q = m.group(1)
-                if len(q) >= 8:
-                    if not q.endswith("?"):
-                        q += "?"
-                    qs.append(q)
-    return (qs or fallback)[:MAX_QUESTIONS]
+            if not m:
+                continue
+            q = m.group(1).strip()
+            if len(q) < 8:
+                continue
+            if not q.endswith("?"):
+                q += "?"
+            qs.append(q)
+    return qs or fallback
 
-def ask_next_question() -> str | None:
-    i   = st.session_state.q_idx
-    qs  = st.session_state.questions
-    cap = st.session_state.max_q
-    if i >= len(qs) or i >= cap:
-        st.session_state.finished = True
-        return None
-    q = qs[i]
-    st.session_state.q_idx += 1
-    return q
+def _split_text(text: str, chunk_size: int = 1400, overlap: int = 200) -> List[str]:
+    t = (text or "").strip()
+    if not t:
+        return []
+    if chunk_size <= overlap:
+        overlap = 0
+    out = []
+    i = 0
+    n = len(t)
+    while i < n:
+        j = min(n, i + chunk_size)
+        out.append(t[i:j])
+        if j == n:
+            break
+        i = max(0, j - overlap)
+    return out
 
-def render_transcript() -> str:
-    lines = []
-    for m in st.session_state.history:
-        who = "Interviewer" if m.origin == "ai" else "Candidate"
-        lines.append(f"{who}: {m.message}")
-    return "\n".join(lines)
+def _build_retriever(text: str):
+    chunks = _split_text(text)
+    if not chunks:
+        chunks = ["(empty)"]
+    vs = FAISS.from_texts(chunks, HuggingFaceEmbeddings(model_name=EMBED_MODEL))
+    return vs.as_retriever(search_type="similarity", search_kwargs={"k": RETRIEVE_K})
 
-def init_state(jd: str):
-    if "retriever" not in st.session_state:
-        st.session_state.retriever = build_retriever(jd)
+def _retrieve_context(retriever, query: str) -> str:
+    # works across retriever API versions
+    try:
+        docs = retriever.invoke(query)
+    except Exception:
+        docs = retriever.get_relevant_documents(query)
+    parts = []
+    for d in docs or []:
+        pc = getattr(d, "page_content", None)
+        if pc:
+            parts.append(pc)
+    return "\n\n".join(parts)[:12000]  # cap
 
-    if "chain_kwargs" not in st.session_state:
-        st.session_state.chain_kwargs = {
-            "prompt": PromptTemplate(
-                input_variables=["context", "question"],
-                template=templates.behavioral_template
-            )
-        }
+def _make_feedback_report(llm, hist: List[Message]) -> str:
+    tmpl = PromptTemplate(input_variables=["history", "input"], template=templates.feedback_template)
+    prompt = tmpl.format(
+        history=_render_transcript(hist),
+        input="Provide an evaluation of the interview. Include score, strengths, gaps, improved answers, and a short 7-day plan."
+    )
+    return _invoke_chat(llm, prompt)
 
-    if "memory" not in st.session_state:
-        st.session_state.memory = ConversationBufferWindowMemory(
-            k=4, human_prefix="Candidate", ai_prefix="Interviewer", return_messages=True
-        )
 
-    if "history" not in st.session_state:
-        st.session_state.history = [Message("ai", "Hi! Give a brief introduction about yourself.")]
+def init_state(seed: str):
+        st.session_state.source_text = seed
+        st.session_state.setdefault("history", [Message("ai", "Hi! Give a brief introduction about yourself.")])
+        st.session_state.setdefault("q_idx", 0)
+        st.session_state.setdefault("finished", False)
+        st.session_state.setdefault("report_text", "")
+        st.session_state.setdefault("last_audio_hash", "")
 
-    if "guideline" not in st.session_state:
-        llm = build_chat_model(temperature=0.3, context_window=700)
-        st.session_state.guideline = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            chain_type_kwargs=st.session_state.chain_kwargs,
-            retriever=st.session_state.retriever,
-            memory=st.session_state.memory
-        ).invoke({"query": "Create a behavioural interview guideline with crisp, situation-based questions."})["result"]
+        if "retriever" not in st.session_state:
+            st.session_state.retriever = _build_retriever(seed)
 
-    if "questions" not in st.session_state:
-        fallback = [
-            "Tell me about a time you handled conflicting priorities.",
-            "Describe a difficult teammate and how you worked with them.",
-            "When did you miss a deadline and what did you learn?",
-            "Give an example of influencing without authority.",
-            "How do you handle ambiguous requirements?",
-        ]
-        st.session_state.questions = extract_questions(st.session_state.guideline, fallback)
+        if "llm" not in st.session_state:
+            st.session_state.llm = _mk_llm(temperature=0.3, max_tokens=800)
 
-    if "q_idx" not in st.session_state:   st.session_state.q_idx = 0
-    if "max_q" not in st.session_state:   st.session_state.max_q = MAX_QUESTIONS
-    if "finished" not in st.session_state:st.session_state.finished = False
+        if "feedback_llm" not in st.session_state:
+            st.session_state.feedback_llm = _mk_llm(temperature=0.2, max_tokens=900)
 
-    if "feedback_llm" not in st.session_state:
-        st.session_state.feedback_llm = build_chat_model(temperature=0.2, context_window=600)
+        if "guideline" not in st.session_state:
+            query = "Create a behavioural interview guideline with crisp, situation-based questions."
+            ctx = _retrieve_context(st.session_state.retriever, query)
+            tmpl = PromptTemplate(input_variables=["context", "question"], template=templates.behavioral_template)
+            prompt = tmpl.format(context=ctx, question=query)
+            try:
+                st.session_state.guideline = _invoke_chat(st.session_state.llm, prompt)
+            except Exception:
+                st.session_state.guideline = ""
 
-def handle_answer(blob, auto_play: bool):
-    if st.session_state.finished:
-        return None
+        if "questions" not in st.session_state:
+            fallback = [
+                "Tell me about a time you handled conflicting priorities.",
+                "Describe a time you disagreed with a teammate. What did you do?",
+                "Tell me about a failure and what you learned.",
+                "Give an example of leading without authority.",
+                "How do you handle ambiguous requirements?",
+            ]
+            st.session_state.questions = _extract_questions(st.session_state.guideline, fallback)
 
-    if st.session_state.voice_mode:
-        save_wav_file("temp/audio.wav", blob)
-        try:
-            user_text = transcribe("temp/audio.wav")
-        except Exception:
-            st.session_state.history.append(Message("ai", "Sorry, I couldn't understand that audio."))
+def _handle_input(blob, auto_play: bool):
+        if st.session_state.finished or blob is None:
             return None
-    else:
-        user_text = blob
 
-    st.session_state.history.append(Message("human", user_text))
+        if isinstance(blob, bytes):
+            h = hashlib.sha1(blob).hexdigest()
+            if st.session_state.get("last_audio_hash") == h:
+                return None
+            st.session_state["last_audio_hash"] = h
+            wav_path = _bytes_to_temp_wav(blob)
+            user_text = transcribe(wav_path)
+        else:
+            user_text = blob
 
-    nxt = ask_next_question()
-    if nxt is None:
-        closing = "Thanks—that wraps up the behavioural round. Click **Get feedback** to see your evaluation."
-        st.session_state.history.append(Message("ai", closing))
-        return speak(closing) if auto_play else None
+        user_text = (user_text or "").strip()
+        if not user_text:
+            return None
 
-    st.session_state.history.append(Message("ai", nxt))
-    return speak(nxt) if auto_play else None
+        st.session_state.history.append(Message("human", user_text))
 
-# ── UI ─────────────────────────────────────────────────────
-st.title("Behavioural Interview")
+        q_idx = st.session_state.q_idx
+        if q_idx < len(st.session_state.questions) and q_idx < MAX_QUESTIONS:
+            next_q = st.session_state.questions[q_idx]
+            st.session_state.q_idx += 1
+        else:
+            st.session_state.finished = True
+            next_q = "Thanks — that concludes the behavioural interview."
 
-jd = st.text_area("Behavioural prompt / keywords (optional):")
-auto_play = st.checkbox("Let interviewer speak (Edge-TTS)", value=False)
+        st.session_state.history.append(Message("ai", next_q))
 
-if jd:
-    init_state(jd)
+        if auto_play:
+            return speak(next_q)
+        return None
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button("Show guideline"):
-            st.info(st.session_state.guideline)
-    with c2:
+st.set_page_config(page_title="Behavioral Screen", page_icon="🧠")
+st.title("🧠 Behavioral Interview")
+
+seed = st.text_area("Optional: paste a JD or role keywords (helps tailor questions)", height=180, placeholder="Paste JD / role hints… (optional)")
+init_state(seed.strip())
+
+c1, c2, c3 = st.columns([3, 2, 2])
+with c1:
+        auto_play = st.checkbox("Auto-play questions (TTS)", value=False)
+        with st.expander("Show generated guideline"):
+            st.write(st.session_state.get("guideline", ""))
+with c2:
         if st.button("Get feedback"):
-            tmpl = PromptTemplate(input_variables=["history","input"], template=templates.feedback_template)
-            fb   = st.session_state.feedback_llm.invoke(tmpl.format(history=render_transcript(), input="Evaluate the interview."))
-            st.markdown(fb)
-            st.download_button("Download feedback", fb, file_name="behavioural_feedback.txt")
-    with c3:
+            st.session_state.report_text = _make_feedback_report(st.session_state.feedback_llm, st.session_state.history)
+with c3:
         if st.button("Restart interview"):
-            for k in ("history","q_idx","finished"):
-                if k in st.session_state: del st.session_state[k]
-            st.experimental_rerun()
+            for k in ("history","q_idx","finished","report_text","last_audio_hash","retriever","guideline","questions","llm","feedback_llm","source_text"):
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.rerun()
 
-    st.session_state.voice_mode = st.checkbox("Speak instead of typing", value=False)
-    inp = audio_recorder(pause_threshold=2.5, sample_rate=44100) if st.session_state.voice_mode and not st.session_state.finished else (
-          st.chat_input("Your answer") if not st.session_state.finished else None)
+if st.session_state.get("report_text"):
+        st.download_button("Download report.txt", st.session_state.report_text, file_name="behavioral_report.txt", mime="text/plain")
+        with st.expander("View report"):
+            st.text_area("Feedback", st.session_state.report_text, height=350)
 
-    wav_np = handle_answer(inp, auto_play) if inp else None
+voice_mode = st.checkbox("Speak instead of typing", value=False)
 
-    for m in st.session_state.history:
-        role = "assistant" if m.origin == "ai" else "user"
-        with st.chat_message(role):
+user_blob = (
+        audio_recorder(pause_threshold=2.5, sample_rate=44100)
+        if voice_mode and not st.session_state.finished
+        else (st.chat_input("Your answer") if not st.session_state.finished else None)
+    )
+
+wav_np = _handle_input(user_blob, auto_play) if user_blob else None
+
+for m in st.session_state.history:
+        with st.chat_message("assistant" if m.origin == "ai" else "user"):
             st.write(m.message)
-            if role == "assistant" and auto_play and wav_np is not None:
-                st.audio(wav_np, sample_rate=24000)
-else:
-    st.info("Enter a prompt (optional) and start when you're ready.")
+
+if auto_play and wav_np is not None:
+        st.audio(wav_np, sample_rate=24000)
