@@ -1,0 +1,9 @@
+cluster_id,item_id,configuration,mode,relevance,star_score,annotator_count,split,prompt_version,model_version
+SYNTH-JD-01,Q01,A,technical,2.8,51.0,3,test,v1,synthetic
+SYNTH-JD-01,Q02,A,technical,3.0,52.0,3,test,v1,synthetic
+SYNTH-JD-01,Q01,D,technical,4.1,73.0,3,test,v1,synthetic
+SYNTH-JD-01,Q02,D,technical,4.3,75.0,3,test,v1,synthetic
+SYNTH-JD-02,Q03,A,technical,2.7,50.0,3,test,v1,synthetic
+SYNTH-JD-02,Q04,A,technical,2.9,51.0,3,test,v1,synthetic
+SYNTH-JD-02,Q03,D,technical,4.2,74.0,3,test,v1,synthetic
+SYNTH-JD-02,Q04,D,technical,4.4,76.0,3,test,v1,synthetic

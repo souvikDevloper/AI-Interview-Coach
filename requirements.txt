@@ -1,11 +1,13 @@
-langchain
-langchain-community
-sentence-transformers
-transformers
+langchain>=0.3,<2
+langchain-community>=0.3,<1
+langchain-groq>=0.2,<1
+sentence-transformers>=3,<6
+transformers>=4.41,<5
+huggingface-hub>=0.34,<1
 PyPDF2
 python-dotenv
 faster-whisper
-numpy
+numpy>=1.26,<3
 soundfile
 edge-tts
 # wave              ← REMOVE (stdlib already provides wave)
@@ -14,6 +16,6 @@ nltk
 audio_recorder_streamlit
 streamlit-option-menu
 streamlit-lottie
-faiss-cpu
+faiss-cpu>=1.8,<2
 boto3
 ipython             # exact case doesn’t matter; 9.x needs Python 3.11

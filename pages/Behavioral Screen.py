@@ -1,10 +1,6 @@
     
 
-    # ── one-off flags ───────────────────────────────────────────
 import os
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-os.environ["CT2_FORCE_CPU"] = "1"
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 import re
 import hashlib
@@ -18,21 +14,17 @@ load_dotenv()
 import streamlit as st
 from audio_recorder_streamlit import audio_recorder
 
-from langchain_groq import ChatGroq
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 
-
-
+from ai_interview_coach.llm import build_chat_model
+from ai_interview_coach.retrieval import HybridRetriever
 from prompts.prompts import templates
 from speech_recognition.offline import transcribe
 from tts.edge_speak import speak
 
-GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-EMBED_MODEL   = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 MAX_QUESTIONS = 10
 RETRIEVE_K    = int(os.getenv("RETRIEVE_K", "4"))
+RETRIEVAL_MODE = "behavioral"
 
 @dataclass
 class Message:
@@ -40,10 +32,7 @@ class Message:
     message: str
 
 def _mk_llm(temperature: float, max_tokens: int):
-    try:
-        return ChatGroq(model=GROQ_MODEL, temperature=temperature, max_tokens=max_tokens)
-    except TypeError:
-        return ChatGroq(model_name=GROQ_MODEL, temperature=temperature, max_tokens=max_tokens)
+    return build_chat_model(temperature, max_tokens)
 
 def _invoke_chat(llm, prompt: str) -> str:
     r = llm.invoke(prompt)
@@ -82,42 +71,18 @@ def _extract_questions(guideline: str, fallback: List[str]) -> List[str]:
             qs.append(q)
     return qs or fallback
 
-def _split_text(text: str, chunk_size: int = 1400, overlap: int = 200) -> List[str]:
-    t = (text or "").strip()
-    if not t:
-        return []
-    if chunk_size <= overlap:
-        overlap = 0
-    out = []
-    i = 0
-    n = len(t)
-    while i < n:
-        j = min(n, i + chunk_size)
-        out.append(t[i:j])
-        if j == n:
-            break
-        i = max(0, j - overlap)
-    return out
-
 def _build_retriever(text: str):
-    chunks = _split_text(text)
-    if not chunks:
-        chunks = ["(empty)"]
-    vs = FAISS.from_texts(chunks, HuggingFaceEmbeddings(model_name=EMBED_MODEL))
-    return vs.as_retriever(search_type="similarity", search_kwargs={"k": RETRIEVE_K})
+    source = text.strip() or "Behavioural interview practice using the STAR framework."
+    return HybridRetriever.from_text(
+        source,
+        mode=RETRIEVAL_MODE,
+        source_id="behavioral-role-context",
+        chunk_size=500,
+        overlap=50,
+    )
 
 def _retrieve_context(retriever, query: str) -> str:
-    # works across retriever API versions
-    try:
-        docs = retriever.invoke(query)
-    except Exception:
-        docs = retriever.get_relevant_documents(query)
-    parts = []
-    for d in docs or []:
-        pc = getattr(d, "page_content", None)
-        if pc:
-            parts.append(pc)
-    return "\n\n".join(parts)[:12000]  # cap
+    return retriever.context(query, k=RETRIEVE_K, max_chars=12000)
 
 def _make_feedback_report(llm, hist: List[Message]) -> str:
     tmpl = PromptTemplate(input_variables=["history", "input"], template=templates.feedback_template)

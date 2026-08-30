@@ -1,37 +1,74 @@
 # speech_recognition/offline.py
 # ---------------------------------------------------------------
-# Whisper (faster-whisper) with CUDA on RTX 3060 → CPU fallback.
-# Low-latency settings for interview UX.
+# Whisper (faster-whisper) with configurable CUDA/CPU selection.
+# Model loading is lazy so importing the application does not allocate a GPU
+# or download a model before speech recognition is used.
 from __future__ import annotations
 
 import os
 import tempfile
-from typing import Optional
+import threading
+from typing import Any, Dict, List, Optional
 
-from faster_whisper import WhisperModel
+_model: Optional[Any] = None
+_model_lock = threading.Lock()
 
 
-def _make_model() -> WhisperModel:
-    """
-    Prefer GPU (float16) on RTX 3060.
-    If that fails (no CUDA/cuDNN), fall back to CPU int8.
-    """
-    last_err: Optional[Exception] = None
-    attempts = [
-        dict(device="cuda", device_index=0, compute_type="float16"),
-        dict(device="cpu",  compute_type="int8", cpu_threads=max(1, os.cpu_count() // 2)),
+def _candidate_configs() -> List[Dict[str, Any]]:
+    """Return deterministic device configurations from environment settings."""
+    device = os.getenv("WHISPER_DEVICE", "auto").strip().lower()
+    compute = os.getenv("WHISPER_COMPUTE", "auto").strip().lower()
+    allow_fallback = os.getenv("WHISPER_ALLOW_FALLBACK", "1").strip() not in {
+        "0",
+        "false",
+        "no",
+    }
+    cpu_threads = max(1, (os.cpu_count() or 2) // 2)
+
+    if device not in {"auto", "cuda", "cpu"}:
+        raise ValueError("WHISPER_DEVICE must be one of: auto, cuda, cpu")
+
+    if device == "cpu":
+        return [{"device": "cpu", "compute_type": "int8" if compute == "auto" else compute,
+                 "cpu_threads": cpu_threads}]
+
+    cuda_cfg: Dict[str, Any] = {
+        "device": "cuda",
+        "device_index": int(os.getenv("WHISPER_DEVICE_INDEX", "0")),
+        "compute_type": "float16" if compute == "auto" else compute,
+    }
+    if device == "cuda" and not allow_fallback:
+        return [cuda_cfg]
+
+    return [
+        cuda_cfg,
+        {"device": "cpu", "compute_type": "int8", "cpu_threads": cpu_threads},
     ]
-    for cfg in attempts:
+
+
+def _make_model() -> Any:
+    """Build the configured model, with an optional CPU fallback."""
+    from faster_whisper import WhisperModel
+
+    last_err: Optional[Exception] = None
+    model_name = os.getenv("WHISPER_MODEL", "small.en").strip() or "small.en"
+    for cfg in _candidate_configs():
         try:
-            # English-only model → a bit faster & smaller than multilingual
-            return WhisperModel("small.en", **cfg)
+            return WhisperModel(model_name, **cfg)
         except Exception as e:
             last_err = e
             continue
     raise RuntimeError(f"Failed to initialize Whisper: {last_err!r}")
 
 
-_model = _make_model()
+def get_model() -> Any:
+    """Create the Whisper model once, on first transcription."""
+    global _model
+    if _model is None:
+        with _model_lock:
+            if _model is None:
+                _model = _make_model()
+    return _model
 
 
 def save_wav_file(path: str, raw_bytes: bytes) -> None:
@@ -40,7 +77,7 @@ def save_wav_file(path: str, raw_bytes: bytes) -> None:
 
 
 def transcribe(wav_path: str, lang: str = "en") -> str:
-    segments, _info = _model.transcribe(
+    segments, _info = get_model().transcribe(
         wav_path,
         language=lang,
         vad_filter=True,

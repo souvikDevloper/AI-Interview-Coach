@@ -1,0 +1,9 @@
+session_id,utterance_id,coder_id,system,misc_code,mi_consistent,mi_inconsistent,prompt_version,model_version
+syn-t1,syn-t1-u1,c1,proposed,reflection,1,0,synthetic-v1,synthetic-model
+syn-t1,syn-t1-u2,c1,proposed,affirmation,1,0,synthetic-v1,synthetic-model
+syn-t2,syn-t2-u1,c1,proposed,reflection,1,0,synthetic-v1,synthetic-model
+syn-t2,syn-t2-u2,c1,proposed,neutral,0,0,synthetic-v1,synthetic-model
+syn-c1,syn-c1-u1,c1,baseline,advice,0,1,synthetic-v1,synthetic-model
+syn-c1,syn-c1-u2,c1,baseline,neutral,0,0,synthetic-v1,synthetic-model
+syn-c2,syn-c2-u1,c1,baseline,reflection,1,0,synthetic-v1,synthetic-model
+syn-c2,syn-c2-u2,c1,baseline,advice,0,1,synthetic-v1,synthetic-model
