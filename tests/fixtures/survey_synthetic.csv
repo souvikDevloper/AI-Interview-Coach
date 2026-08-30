@@ -1,0 +1,10 @@
+participant_id,institution_id,item_id,response,gender_group,year_group,discipline_group,deployment_group
+syn-p1,syn-i1,q1,5,g1,y1,d1,cpu
+syn-p1,syn-i1,q2,5,g1,y1,d1,cpu
+syn-p1,syn-i1,q3,4,g1,y1,d1,cpu
+syn-p2,syn-i1,q1,4,g2,y2,d2,gpu
+syn-p2,syn-i1,q2,4,g2,y2,d2,gpu
+syn-p2,syn-i1,q3,3,g2,y2,d2,gpu
+syn-p3,syn-i2,q1,2,g1,y1,d1,cpu
+syn-p3,syn-i2,q2,2,g1,y1,d1,cpu
+syn-p3,syn-i2,q3,1,g1,y1,d1,cpu

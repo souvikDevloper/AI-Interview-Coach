@@ -1,0 +1,6 @@
+-r requirements.txt
+datasets
+peft
+trl
+torch
+statsmodels

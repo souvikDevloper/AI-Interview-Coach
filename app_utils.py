@@ -7,6 +7,7 @@ app_utils.py – tiny helpers for the AI-Interviewer app
 from __future__ import annotations
 
 import contextlib
+import os
 import nltk
 import streamlit as st
 from langchain_community.chat_models import ChatOllama

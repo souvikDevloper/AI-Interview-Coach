@@ -1,0 +1,5 @@
+session_id,utterance_id,condition,reference,hypothesis,speaker_group,stt_model,transcription_protocol
+syn-s1,syn-s1-u1,clean,the quick brown fox,the quick brown fox,synthetic,synthetic-model,synthetic-v1
+syn-s1,syn-s1-u2,clean,practice makes progress,practice makes progress,synthetic,synthetic-model,synthetic-v1
+syn-s2,syn-s2-u1,noise,describe your project,describe project,synthetic,synthetic-model,synthetic-v1
+syn-s2,syn-s2-u2,noise,what was the result,what is the result,synthetic,synthetic-model,synthetic-v1

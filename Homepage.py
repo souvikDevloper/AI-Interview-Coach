@@ -4,9 +4,9 @@ import streamlit as st
 try:
     from PIL import Image
     im = Image.open("icon.png")
-    st.set_page_config(page_title="AI Interviewer", layout="centered", page_icon=im)
+    st.set_page_config(page_title="AI Interview Coach", layout="centered", page_icon=im)
 except Exception:
-    st.set_page_config(page_title="AI Interviewer", layout="centered")
+    st.set_page_config(page_title="AI Interview Coach", layout="centered")
 
 # --- Try to use streamlit-option_menu if available; otherwise fall back to radio ---
 try:
@@ -29,7 +29,7 @@ except Exception:
 
 st.markdown("<style>#MainMenu{visibility:hidden;}</style>", unsafe_allow_html=True)
 
-st.title("AI Interviewer  ")
+st.title("AI Interview Coach")
 st.caption("Practice realistic interviews with job-aware questions and optional voice.")
 
 st.markdown("#### Get started")

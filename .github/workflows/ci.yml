@@ -1,0 +1,35 @@
+name: core-tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install lightweight test dependency
+        run: python -m pip install --upgrade "numpy>=1.26"
+      - name: Compile production and analysis modules
+        run: python -m compileall ai_interview_coach pages scripts
+      - name: Run deterministic unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate synthetic fixture contract
+        run: python scripts/validate_evidence.py retrieval tests/fixtures/retrieval_clustered_synthetic.csv
+      - name: Smoke-test evidence analyses on synthetic-only fixtures
+        run: |
+          python scripts/analyze_clustered.py tests/fixtures/retrieval_clustered_synthetic.csv --bootstrap 200 --permutations 200
+          python scripts/analyze_misc_clustered.py tests/fixtures/misc_clustered_synthetic.csv --treatment proposed --control baseline --bootstrap 200 --permutations 200
+          python scripts/analyze_wer.py tests/fixtures/wer_synthetic.csv
+          python scripts/analyze_survey.py tests/fixtures/survey_synthetic.csv --group discipline_group
